@@ -29,8 +29,8 @@ class ComputerVisionDemo:
         'Scale': ('Scale', 20, 200, 100), 
     }
     CHESSBOARD_CONFIG = {
-        'Rows': ('Rows', 4, 12, 8),      # Internal corners (rows)
-        'Cols': ('Cols', 4, 12, 6),      # Internal corners (cols)
+        'Rows': ('Rows', 4, 12, 9),     
+        'Cols': ('Cols', 4, 12, 6),   
     }
     def __init__(self):
         self.cap = cv2.VideoCapture(0)
@@ -72,7 +72,7 @@ class ComputerVisionDemo:
 
             display_frame = self._process_frame(frame.copy())
 
-            help_text = "[N]ormal [Q]uit [F]ilter [G]eometry [P]ano [C]hessboard"
+            help_text = "[N]ormal [Q]uit [F]ilter [G]eometry [P]ano [T]Chessboard"
             draw_text(display_frame, help_text, pos=(10, display_frame.shape[0] - 20), scale=0.6)
             cv2.imshow(self.window_name, display_frame)
 
@@ -177,6 +177,87 @@ class ComputerVisionDemo:
         draw_text(frame, "[S] Save Panorama [C] Capture", pos=(10, frame.shape[0] - 60), scale=0.6)
         return frame
     
+    def _detect_chessboard(self, frame):
+        try:
+            rows = cv2.getTrackbarPos('Rows', self.window_name)
+            cols = cv2.getTrackbarPos('Cols', self.window_name)
+        except:
+            rows, cols = 9, 6 
+        
+        # Ensure minimum values
+        if rows < 4: rows = 4
+        if cols < 4: cols = 4
+        
+        # Convert to grayscale
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        # Find chessboard corners
+        chessboard_size = (cols, rows)
+        ret, corners = cv2.findChessboardCorners(gray, chessboard_size, None)
+        
+        if ret:
+            # Refine corner positions for sub-pixel accuracy
+            criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+            corners = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+            
+            self.chessboard_detected = True
+            self.chessboard_corners = corners
+            return True, corners, chessboard_size
+        else:
+            self.chessboard_detected = False
+            self.chessboard_corners = None
+            return False, None, chessboard_size
+
+    # cheessboard mode
+    def _draw_corner_points(self, frame, corners):
+        """Draw individual corner points with numbers"""
+        for i, corner in enumerate(corners):
+            x, y = corner.ravel()
+            x, y = int(x), int(y)
+            
+            # Draw corner point as circle
+            cv2.circle(frame, (x, y), 5, (0, 255, 0), -1)  # Green filled circle
+            #cv2.circle(frame, (x, y), 10, (0, 0, 255), 2)   # Red border
+            
+            # Draw corner number (every 5th corner to avoid clutter)
+            """
+            if i % 5 == 0:
+                cv2.putText(frame, str(i), (x+12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            """
+    def _draw_chessboard_mode(self, frame):
+        if not self.trackbars_created:
+            for name, (label, min_val, max_val, default_pos) in self.CHESSBOARD_CONFIG.items():
+                cv2.createTrackbar(name, self.window_name, default_pos, max_val, lambda x: None)
+            self.trackbars_created = True
+
+        # Detect chessboard
+        detected, corners, chessboard_size = self._detect_chessboard(frame)
+        
+        if detected:
+            # Draw standard chessboard corners visualization
+            cv2.drawChessboardCorners(frame, chessboard_size, corners, True)
+            
+            # Draw individual corner points
+            self._draw_corner_points(frame, corners)
+            
+            # Display detection info
+            rows, cols = chessboard_size[1], chessboard_size[0]
+            draw_text(frame, f"Chessboard Detected: {cols+1}x{rows+1}", pos=(20, 80), color=(0, 255, 0))
+            draw_text(frame, f"Tracking {len(corners)} corners", pos=(20, 110), color=(0, 255, 0))
+
+        else:
+            draw_text(frame, "No Chessboard detect", pos=(20, 80), color=(0, 0, 255))
+            #rows = cv2.getTrackbarPos('Rows', self.window_name) if self.trackbars_created else 8
+            #cols = cv2.getTrackbarPos('Cols', self.window_name) if self.trackbars_created else 6
+            #draw_text(frame, f"Looking for: {cols+1}x{rows+1} board", pos=(20, 110), color=(255, 255, 0))
+
+        draw_text(frame, "Mode: CHESSBOARD TRACKING")
+        draw_text(frame, "[S] Save Detection", pos=(10, frame.shape[0] - 60), scale=0.6)
+        
+        return frame
+
+    # handle key presses
+    
     def _handle_key_press(self, key, frame):
         if key == ord('q'): return True
         
@@ -185,7 +266,7 @@ class ComputerVisionDemo:
             ord('f'): 'FILTER',
             ord('g'): 'GEOMETRY',
             ord('p'): 'PANO',
-            ord('c'): 'CHESSBOARD',
+            ord('t'): 'CHESSBOARD',
         }
         if key in mode_keys:
             self._set_mode(mode_keys[key])
@@ -244,84 +325,6 @@ class ComputerVisionDemo:
             return False
         return False
 
-
-    def _detect_chessboard(self, frame):
-        try:
-            rows = cv2.getTrackbarPos('Rows', self.window_name)
-            cols = cv2.getTrackbarPos('Cols', self.window_name)
-        except:
-            rows, cols = 9, 6 
-        
-        # Ensure minimum values
-        if rows < 4: rows = 4
-        if cols < 4: cols = 4
-        
-        # Convert to grayscale
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        
-        # Find chessboard corners
-        chessboard_size = (cols, rows)
-        ret, corners = cv2.findChessboardCorners(gray, chessboard_size, None)
-        
-        if ret:
-            # Refine corner positions for sub-pixel accuracy
-            criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-            corners = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
-            
-            self.chessboard_detected = True
-            self.chessboard_corners = corners
-            return True, corners, chessboard_size
-        else:
-            self.chessboard_detected = False
-            self.chessboard_corners = None
-            return False, None, chessboard_size
-
-    def _draw_corner_points(self, frame, corners):
-        """Draw individual corner points with numbers"""
-        for i, corner in enumerate(corners):
-            x, y = corner.ravel()
-            x, y = int(x), int(y)
-            
-            # Draw corner point as circle
-            cv2.circle(frame, (x, y), 8, (0, 255, 0), -1)  # Green filled circle
-            #cv2.circle(frame, (x, y), 10, (0, 0, 255), 2)   # Red border
-            
-            # Draw corner number (every 5th corner to avoid clutter)
-            """
-            if i % 5 == 0:
-                cv2.putText(frame, str(i), (x+12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            """
-    def _draw_chessboard_mode(self, frame):
-        if not self.trackbars_created:
-            for name, (label, min_val, max_val, default_pos) in self.CHESSBOARD_CONFIG.items():
-                cv2.createTrackbar(name, self.window_name, default_pos, max_val, lambda x: None)
-            self.trackbars_created = True
-
-        # Detect chessboard
-        detected, corners, chessboard_size = self._detect_chessboard(frame)
-        
-        if detected:
-            # Draw standard chessboard corners visualization
-            cv2.drawChessboardCorners(frame, chessboard_size, corners, True)
-            
-            # Draw individual corner points
-            self._draw_corner_points(frame, corners)
-            
-            # Display detection info
-            rows, cols = chessboard_size[1], chessboard_size[0]
-            draw_text(frame, f"Chessboard Detected: {cols+1}x{rows+1}", pos=(20, 80), color=(0, 255, 0))
-            draw_text(frame, f"Tracking {len(corners)} corners", pos=(20, 110), color=(0, 255, 0))
-
-        else:
-            draw_text(frame, "No Chessboard detect", pos=(20, 80), color=(0, 0, 255))
-            #rows = cv2.getTrackbarPos('Rows', self.window_name) if self.trackbars_created else 8
-            #cols = cv2.getTrackbarPos('Cols', self.window_name) if self.trackbars_created else 6
-            #draw_text(frame, f"Looking for: {cols+1}x{rows+1} board", pos=(20, 110), color=(255, 255, 0))
-
-        draw_text(frame, "Mode: CHESSBOARD TRACKING")
-        draw_text(frame, "[S] Save Detection", pos=(10, frame.shape[0] - 60), scale=0.6)
-        
-        return frame
 
 if __name__ == '__main__':
     app = ComputerVisionDemo()
